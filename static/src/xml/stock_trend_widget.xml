@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+    <t t-name="realtime_product_stock_showcase.TrendMiniChart">
+        <div t-ref="chart" class="stock_trend_widget"
+             style="display: flex; align-items: flex-end; height: 20px;"></div>
+    </t>
+</templates>

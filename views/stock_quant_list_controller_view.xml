@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="view_quant_tree_inherit_sync" model="ir.ui.view">
+        <field name="name">stock.quant.list.auto.sync</field>
+        <field name="model">stock.quant</field>
+        <field name="inherit_id" ref="stock.view_stock_quant_tree_editable"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="attributes">
+                <attribute name="js_class">stock_quant_auto_sync_list</attribute>
+            </xpath>
+
+            <!-- Add color indicator and last updated fields -->
+            <xpath expr="//field[@name='product_uom_id']" position="after">
+                <field name="stock_status" widget="badge"
+                   decoration-danger="stock_status == 'danger'"
+                   decoration-warning="stock_status == 'warning'"
+                   decoration-success="stock_status == 'success'"/>
+                <field name="last_updated"/>
+                <field name="stock_activity_info"/>
+<!--                <field name="stock_history_json"-->
+<!--                       widget="stock_trend_widget"-->
+<!--                       string="7-Day Trend"/>-->
+            </xpath>
+
+        </field>
+    </record>
+
+    <record id="stock.menu_valuation" model="ir.ui.menu">
+        <field name="name">Location-wise Realtime Stock</field>
+    </record>
+</odoo>
