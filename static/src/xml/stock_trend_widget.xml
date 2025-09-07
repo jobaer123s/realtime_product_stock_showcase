@@ -1,7 +1,34 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
+    <!-- Cell widget (mini) -->
     <t t-name="realtime_product_stock_showcase.TrendMiniChart">
-        <div t-ref="chart" class="stock_trend_widget"
-             style="display: flex; align-items: flex-end; height: 20px;"></div>
+        <div t-ref="chart"
+             class="stock_trend_widget"
+             data-no-edit="1"
+             style="display:flex;align-items:flex-end;height:24px;">
+        </div>
     </t>
+
+    <!-- Big chart inside Dialog -->
+    <t t-name="realtime_product_stock_showcase.TrendBigChart">
+      <Dialog title="state.title" size="lg">
+        <div class="popup popup-large" style="width: 500px;margin: 0 auto;">
+            <div class="popup-content">
+                <div class="d-flex justify-content-start gap-3 mb-3">
+                  <span style="color:#fff" class="badge bg-success px-3 py-2 rounded-pill shadow-sm">
+                    Total In: <t t-esc="props.totals ? props.totals.in : sum(props.value.purchase_trend)"/>
+                  </span>
+                  <span style="color:#fff" class="badge bg-danger px-3 py-2 rounded-pill shadow-sm">
+                    Total Out: <t t-esc="props.totals ? props.totals.out : sum(props.value.sale_trend)"/>
+                  </span>
+                </div>
+
+                <div class="mb-2">
+                   <div t-ref="bigChart" style="min-height:220px;"></div>
+                </div>
+            </div>
+        </div>
+      </Dialog>
+    </t>
+
 </templates>

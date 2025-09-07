@@ -6,133 +6,88 @@ class StockPicking(models.Model):
 
     def button_validate(self):
         res = super().button_validate()
-        print(f"User: {self.env.user}")
+        # tell the client list to refresh (your JS already listens on this)
         self.env['bus.bus']._sendone(
             self.env.user.partner_id, 'stock.quant.sync', {'refresh': True}
         )
         return res
 
+
 class StockQuant(models.Model):
     _inherit = 'stock.quant'
 
-    stock_status = fields.Selection([
-        ('danger', 'Critical'),
-        ('warning', 'Warning'),
-        ('success', 'Healthy'),
-    ])
+    stock_status = fields.Selection(
+        [('danger','Critical'),('warning','Warning'),('success','Healthy')],
+        compute='_compute_stock_health', store=True, compute_sudo=True)
+    last_updated = fields.Datetime(compute='_compute_stock_health', store=True, compute_sudo=True)
+    stock_history_json = fields.Json(compute='_compute_stock_health', store=True, compute_sudo=True)
+    stock_activity_info = fields.Char(compute='_compute_stock_health', store=True, compute_sudo=True)
 
-    last_updated = fields.Datetime(string="Last Updated", default=lambda self: fields.Datetime.now())
-    stock_history_json = fields.Json(
-        string="Stock History",
-        # compute="_compute_stock_history_json",
-        store=True,
-        compute_sudo=True,
-        depends_context=('company_id',)
-    )
+    @api.depends('quantity','reserved_quantity','product_id','location_id')
+    def _compute_stock_health(self):
+        MoveLine = self.env['stock.move.line']
+        now = fields.Datetime.now()
+        for q in self:
+            if not q.product_id or not q.location_id:
+                q.stock_status = False
+                q.stock_activity_info = False
+                q.last_updated = now
+                q.stock_history_json = {'purchase_trend':[0]*7,'sale_trend':[0]*7,'days':[]}
+                continue
 
-    stock_activity_info = fields.Char(
-        string="Stock Activity",
-        compute="_compute_inventory_quantity_auto_apply",
-        store=True
-    )
-
-    @api.depends('quantity', 'product_id', 'location_id')
-    def _compute_inventory_quantity_auto_apply(self):
-        super()._compute_inventory_quantity_auto_apply()
-        StockMoveLine = self.env['stock.move.line']
-
-        for quant in self:
-            purchase_trend = []
-            sale_trend = []
             today = fields.Date.context_today(self)
-
-            # Collect 7 days data for avg calc
-            for days_ago in range(7, 0, -1):
-                date = today - timedelta(days=days_ago)
+            purchase_trend, sale_trend, days = [], [], []
+            for d in range(7,0,-1):
+                date = today - timedelta(days=d)
                 start_dt = datetime.combine(date, datetime.min.time())
                 end_dt = datetime.combine(date, datetime.max.time())
-
-                incoming_moves = StockMoveLine.search([
-                    ('product_id', '=', quant.product_id.id),
-                    ('location_dest_id', '=', quant.location_id.id),
-                    ('date', '>=', fields.Datetime.to_string(start_dt)),
-                    ('date', '<=', fields.Datetime.to_string(end_dt)),
+                incoming = MoveLine.search([
+                    ('product_id','=',q.product_id.id),
+                    ('location_dest_id','=',q.location_id.id),
+                    ('state','=','done'),
+                    ('date','>=',fields.Datetime.to_string(start_dt)),
+                    ('date','<=',fields.Datetime.to_string(end_dt)),
                 ])
-                in_qty = sum(incoming_moves.mapped('quantity')) or 0.0
-                purchase_trend.append(float(in_qty))
-
-                outgoing_moves = StockMoveLine.search([
-                    ('product_id', '=', quant.product_id.id),
-                    ('location_id', '=', quant.location_id.id),
-                    ('date', '>=', fields.Datetime.to_string(start_dt)),
-                    ('date', '<=', fields.Datetime.to_string(end_dt)),
+                outgoing = MoveLine.search([
+                    ('product_id','=',q.product_id.id),
+                    ('location_id','=',q.location_id.id),
+                    ('state','=','done'),
+                    ('date','>=',start_dt),
+                    ('date','<=',end_dt),
                 ])
-                out_qty = sum(outgoing_moves.mapped('quantity')) or 0.0
-                sale_trend.append(float(out_qty))
+                purchase_trend.append(float(sum(incoming.mapped('quantity')) or 0.0))
+                sale_trend.append(float(sum(outgoing.mapped('quantity')) or 0.0))
+                days.append(fields.Date.to_string(date))
 
-            # Last IN
-            last_in_move = StockMoveLine.search([
-                ('product_id', '=', quant.product_id.id),
-                ('location_dest_id', '=', quant.location_id.id),
+            last_in_move = MoveLine.search([
+                ('product_id','=',q.product_id.id),
+                ('location_dest_id','=',q.location_id.id),
+                ('state','=','done'),
             ], order='date desc', limit=1)
-            last_in_qty = last_in_move.quantity if last_in_move else 0.0
+            last_in_qty = float(last_in_move.quantity) if last_in_move else 0.0
 
-            # Last OUT
-            last_out_move = StockMoveLine.search([
-                ('product_id', '=', quant.product_id.id),
-                ('location_id', '=', quant.location_id.id),
+            last_out_move = MoveLine.search([
+                ('product_id','=',q.product_id.id),
+                ('location_id','=',q.location_id.id),
+                ('state','=','done'),
             ], order='date desc', limit=1)
-            last_out_qty = last_out_move.quantity if last_out_move else 0.0
-            # Avg OUT (7 days)
-            avg_out = round(sum(sale_trend) / 7.0, 2) if sum(sale_trend) else 0.0
-            quant.stock_activity_info = (
-                f"Last IN: {last_in_qty} | "
-                f"Last OUT: {last_out_qty} | "
-                f"Avg OUT: {avg_out}/day "
-            )
+            last_out_qty = float(last_out_move.quantity) if last_out_move else 0.0
 
-    # @api.depends('quantity', 'product_id', 'location_id')
-    # def _compute_inventory_quantity_auto_apply(self):
-    #     super()._compute_inventory_quantity_auto_apply()
-    #     StockMoveLine = self.env['stock.move.line']
-    #     today = fields.Date.context_today(self)
-    #
-    #     for quant in self:
-    #         purchase_trend = []
-    #         sale_trend = []
-    #
-    #         for days_ago in range(7, 0, -1):
-    #             date = today - timedelta(days=days_ago)
-    #             start_dt = datetime.combine(date, datetime.min.time())
-    #             end_dt = datetime.combine(date, datetime.max.time())
-    #
-    #             # Purchases → destination is quant.location_id
-    #             incoming_moves = StockMoveLine.search([
-    #                 ('product_id', '=', quant.product_id.id),
-    #                 ('location_dest_id', '=', quant.location_id.id),
-    #                 ('date', '>=', fields.Datetime.to_string(start_dt)),
-    #                 ('date', '<=', fields.Datetime.to_string(end_dt)),
-    #             ])
-    #             in_qty = sum(incoming_moves.mapped('quantity')) or 0.0
-    #             purchase_trend.append(float(in_qty))
-    #
-    #             # Sales → source is quant.location_id
-    #             outgoing_moves = StockMoveLine.search([
-    #                 ('product_id', '=', quant.product_id.id),
-    #                 ('location_id', '=', quant.location_id.id),
-    #                 ('date', '>=', fields.Datetime.to_string(start_dt)),
-    #                 ('date', '<=', fields.Datetime.to_string(end_dt)),
-    #             ])
-    #             out_qty = sum(outgoing_moves.mapped('quantity')) or 0.0
-    #             sale_trend.append(float(out_qty))
-    #
-    #         quant.stock_history_json = {
-    #             'purchase_trend': purchase_trend,
-    #             'sale_trend': sale_trend,
-    #         }
+            total_out = sum(sale_trend)
+            avg_out = round(total_out / 7.0, 2) if total_out else 0.0
 
+            q.stock_activity_info = f"Last IN: {last_in_qty} | Last OUT: {last_out_qty} | Avg OUT: {avg_out}/day"
+            available = float(q.quantity) - float(q.reserved_quantity or 0.0)
+            print('available', available)
+            if available <= 0:
+                status = 'danger'
+            elif avg_out <= 0:
+                status = 'success'
+            else:
+                cover_days = available / avg_out
+                status = 'danger' if cover_days < 5 else 'warning' if cover_days < 10 else 'success'
+            print('days', days)
+            q.stock_status = status
+            q.last_updated = now
+            q.stock_history_json = {'purchase_trend': purchase_trend, 'sale_trend': sale_trend, 'days': days}
 
-    def write(self, vals):
-        if 'quantity' in vals or 'inventory_quantity' in vals:
-            vals['last_updated'] = fields.Datetime.now()
-        return super().write(vals)

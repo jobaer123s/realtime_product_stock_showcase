@@ -17,9 +17,9 @@
                    decoration-success="stock_status == 'success'"/>
                 <field name="last_updated"/>
                 <field name="stock_activity_info"/>
-<!--                <field name="stock_history_json"-->
-<!--                       widget="stock_trend_widget"-->
-<!--                       string="7-Day Trend"/>-->
+                <field name="stock_history_json"
+                   widget="stock_trend_widget"
+                   string="7-Day Trend" readonly="1"/>
             </xpath>
 
         </field>
